@@ -1,0 +1,282 @@
+.module EntityCode
+
+.deflong call_hl()
+    push hl
+    ld hl,$+5
+    ex (sp),hl
+    jp (hl)
+.enddeflong
+
+
+
+ENTITY_DATA_SIZE = 7
+
+;Entity data structure
+ENTITY_X     = 0
+ENTITY_Y     = 1
+ENTITY_COLOR = 2
+ENTITY_PASSTHROUGH_CHECK = 3
+ENTITY_ACTIVATE_TILE = 5
+
+
+;B - Old tile
+;C - New tile
+PlayerCanPassThrough:
+    ld hl,_colorCheckTable
+    _chkColorLp:           ;Check if player is entering a color
+        ld a,(hl) \ inc hl
+        ld e,(hl) \ inc hl
+        ld d,(hl) \ inc hl
+        cp TILE_INVISIBLE
+        jr z,_notColor     ;End of list, break out of loop
+        cp c
+        jr nz,_chkColorLp  ;No color match, check next color
+        ex de,hl           ;Color matched, see if player can pass
+        ld c,(ix + ENTITY_COLOR)
+        jp TileInList
+    _notColor:
+    ld a,c
+    cp TILE_BRIDGE \ jr nz,{+}
+        push bc \ ld c,b
+        call TileIsFloor \ pop bc \ jr nz,{+}
+            ;Moving from a floor to a bridge is illegal
+            ;Set NZ and return
+            xor a \ inc a
+            ret
+    +:
+    ld hl,TILE_LIST_IMPASSABLE
+    jp TileNotInList
+    _colorCheckTable:
+        .db TILE_RED     \ .dw TILE_LIST_PLAYER_RED
+        .db TILE_GREEN   \ .dw TILE_LIST_PLAYER_GREEN
+        .db TILE_BLUE    \ .dw TILE_LIST_PLAYER_BLUE
+        .db TILE_CYAN    \ .dw TILE_LIST_PLAYER_CYAN
+        .db TILE_MAGENTA \ .dw TILE_LIST_PLAYER_MAGENTA
+        .db TILE_YELLOW  \ .dw TILE_LIST_PLAYER_YELLOW
+        .db TILE_INVISIBLE
+
+TileIsFloor:
+    ld hl,TILE_LIST_FLOORS
+    jp TileInList
+
+;IX - entity
+PlayerActivateGold:
+    push ix
+
+    ;Find gold and erase it
+    ld ix,GOLD_LIST
+    call _searchTileCoordinateList
+    ld a,(ix + 0)     ;X
+    ld h,(ix + 1)     ;Y
+    call GetTileAddr
+    ld a,(ix + 2)     ;Floor color
+    ld (hl),a
+
+    ;Increment gold count
+    ld hl,player_gold
+    inc (hl)
+
+    ;Set gold collected in flag list
+    ld hl,gold_collected_flags
+    ld d,0
+    ld e,(ix + 3)     ;Gold index
+    add hl,de
+    inc (hl)
+
+    ;Flash screen
+    call FlashScreen
+
+    pop ix
+    ret
+
+;IX - entity
+PlayerActivateTeleporter:
+    push ix
+
+    ;Find teleporter, move player to it
+    ld ix,TELEPORT_LINKS
+    call _searchTileCoordinateList
+    ld h,(ix + 3) ;Y
+    ld l,(ix + 2) ;X
+    ld (player + ENTITY_X),hl
+
+    pop ix
+    ret
+
+;Displays win animation and gold count, then resets game
+PlayerWin:
+    call DrawEntity
+    ld (ix + ENTITY_COLOR),TILE_INVISIBLE
+    ld hl,ANIM_WIN
+    call DisplayAnimation
+    ld a,(player_gold)
+    ld b,a
+    inc b
+    ld l,0
+    ld h,51
+    _dispGoldLp:
+        ld (player + ENTITY_X),hl
+        push hl
+        push bc
+        call DrawRoom
+        ld hl, 4500 * 450 / 1000
+        call Wait
+        pop bc
+        pop hl
+        ld a,4
+        add a,l
+        ld l,a
+        djnz _dispGoldLp
+    jp InitGame
+    
+
+;Used by teleport and gold activation
+;Searches a list of tiles of format (X,Y,Data1,Data2) for
+;a tile beneath the player
+;IN:  IX - pointer to list
+;OUT: IX - pointer to matching tile
+;Destroys HL,DE,BC
+_searchTileCoordinateList:
+    ld hl,(player + ENTITY_X) ;L = Y, H = X
+    ld bc,4
+    _searchTileLp:
+        ld d,(ix + 1)
+        ld e,(ix)
+        or a
+        sbc hl,de
+        add hl,de
+        ret z
+        add ix,bc
+        jr _searchTileLp
+
+
+;IX - entity
+PlayerActivateTile:
+    ld a,(ix + ENTITY_X)
+    ld h,(ix + ENTITY_Y)
+    call GetTileAddr
+    ld c,(hl) ;C = tile beneath player
+    ld hl,TILE_LIST_PAINTS
+    call TileInList \ jr nz,{+}
+        ld a,c
+        cp (ix + ENTITY_COLOR) \ jr z,{+}
+            ld (ix + ENTITY_COLOR), c
+            call FlashScreen
+    +:
+    ld a,c   ;A = tile beneath player
+    cp TILE_GOLD         \ jp z,PlayerActivateGold
+    cp TILE_TELEPORT_SRC \ jp z,PlayerActivateTeleporter
+    cp TILE_WIN          \ jp z,PlayerWin
+    ret
+
+;B  - Old tile
+;C  - New tile
+BoulderCanPassThrough:
+    ld a, c
+    cp TILE_BRIDGE_RAMP \ jr nz, {+}
+        xor a \ inc a
+        ret
+    +:
+    cp TILE_WATER2
+    ret z
+    jp PlayerCanPassThrough
+
+BoulderActivateTile:
+    ld a,(ix + ENTITY_X)
+    ld h,(ix + ENTITY_Y)
+    call GetTileAddr
+    ld c,(hl)
+    ld a, TILE_WATER2
+    cp c \ ret nz
+    ld hl,ANIM_WATER_DRAIN
+    ld (nextAnimation),hl
+    ret
+
+
+;IX - Pointer to entity
+;B  - VelX
+;C  - VelY
+.var 2, _velocity
+EntityMove:
+    ld (_velocity),bc
+    ld a,(ix + ENTITY_X)
+    add a,b
+    ld b,a         ;B = new X
+    ld a,(ix + ENTITY_Y)
+    add a,c
+    ld c,a         ;C = new Y
+
+    push bc
+    ld a,b
+    ld h,c
+    call GetTileAddr
+    ld c,(hl)
+    
+    ld a,(ix + ENTITY_X)
+    ld h,(ix + ENTITY_Y)
+    call GetTileAddr
+    ld b,(hl)
+
+    ld l,(ix + ENTITY_PASSTHROUGH_CHECK)
+    ld h,(ix + ENTITY_PASSTHROUGH_CHECK + 1)
+    call_hl()
+    pop bc
+    ret nz
+
+    ;Check to see if IX points to the player
+    or   a
+    push ix
+    pop  hl
+    ld   de,player
+    sbc  hl,de
+    add  hl,de
+    jr nz,{+}
+        ;If this is the player, check if the boulder is under
+        ld a,(boulder + ENTITY_X)
+        cp b
+        jr nz,{+}
+        ld a,(boulder + ENTITY_Y)
+        cp c
+        jr nz,{+}
+        ld ix,boulder
+        exx
+            ;Move the boulder
+            call EraseEntity
+            ld bc,(_velocity)
+            call EntityMove
+            call DrawEntity
+        exx
+        ld ix,player
+        ld a,(boulder + ENTITY_X)
+        cp b
+        jr nz,{+}
+        ld a,(boulder + ENTITY_Y)
+        cp c
+        ret z ;If boulder didn't move, don't let player move
+    +:
+    ld (ix + ENTITY_X), b
+    ld (ix + ENTITY_Y), c
+    ld l,(ix + ENTITY_ACTIVATE_TILE)
+    ld h,(ix + ENTITY_ACTIVATE_TILE + 1)
+    jp (hl)
+
+;IX - Pointer to entity
+;OUT: A - Top-left X coordinate of room containing entity
+;     H - Top-left Y coordinate of room containing entity
+EntityGetRoom:
+    ld  a,(ix + ENTITY_X)
+    and %11111100 ;Floor to a multiple of 4
+    ld  h,0
+    ld  l,(ix + ENTITY_Y)
+    ld  de,_threesLUT
+    add hl,de
+    ld  h,(hl)
+    ret
+    ;Round down to a multiply of 3 by using the value as an index into this table
+    _threesLUT:
+        .for x, 0, 62
+            .db x - (x % 3)
+        .loop
+
+
+.endmodule

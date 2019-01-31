@@ -1,0 +1,279 @@
+.module GameLogic
+
+.var ENTITY_DATA_SIZE, player   ;Player  data
+.var ENTITY_DATA_SIZE, boulder  ;Boulder data
+.var byte, player_gold          ;Amount of gold player has collected
+.var 9, gold_collected_flags    ;List of bools for which gold has been collected
+.var word, nextAnimation        ;Queued animation to display at end of game loop
+
+;HL - time to wait
+Wait:
+    -: djnz {-}
+    dec hl
+    ld a,h
+    or l
+    jr nz,Wait
+    ret
+
+
+Main:
+    call InitGraphics
+    call InitGame
+
+    ;Load persistent data
+    ld ix,PERSISTENT_DATA
+    ld a,(ix + 0)
+    or a \ jp z,{++} ;If first byte is zero, this is the first run. Don't load.
+        ld a,(ix + 1) \ ld (player + ENTITY_X),a
+        ld a,(ix + 2) \ ld (player + ENTITY_Y),a
+        ld a,(ix + 3) \ ld (player + ENTITY_COLOR),a
+
+        ld a,(ix + 4) \ ld (boulder + ENTITY_X),a
+        ld a,(ix + 5) \ ld (boulder + ENTITY_Y),a
+
+        ld a,(ix + 6) \ ld (player_gold),a
+        
+        ld hl,PERSISTENT_DATA + 7
+        ld de,gold_collected_flags
+        ld bc,9
+        ldir
+
+        ;Remove any gold flagged as collected from map
+        ld hl,gold_collected_flags
+        ld ix,GOLD_LIST
+        .repeat 9
+            xor a
+            or (hl) \ jr z,{+}
+                push hl
+                ld a,(ix + 0)
+                ld h,(ix + 1)
+                call GetTileAddr
+                ld a,(ix + 2)
+                ld (hl),a
+                pop hl
+            +:
+            ld de,4
+            add ix,de
+            inc hl
+        .loop
+    ++:
+
+
+    call DrawRoom
+    ld ix, player
+    call DrawEntity
+    ld ix, boulder
+    call DrawEntity
+    jp GameLoop
+    ret
+
+InitGame:
+    ;Select arrow-keys key group and CLEAR key group
+    ld a,FFh
+    out (01h),a
+    ld a,%11111100
+    out (01h),a
+
+    ;Initialize player / boulder data
+    ld hl, _initialPlayerData
+    ld de, player
+    ld bc, ENTITY_DATA_SIZE
+    ldir
+
+    ld hl, _initialBoulderData
+    ld de, boulder
+    ld bc, ENTITY_DATA_SIZE
+    ldir
+
+    ;Set player score to 0
+    xor a
+    ld (player_gold),a
+    ld h,a
+    ld l,a
+    ld (nextAnimation),hl
+    
+    ;Unflag all gold as collected
+    ld hl,gold_collected_flags
+    .repeat 9
+        ld (hl),a \ inc hl
+    .loop
+    ret
+    _initialPlayerData:
+        .db 5, 1
+        .db TILE_DARK_RED
+        .dw PlayerCanPassThrough
+        .dw PlayerActivateTile
+    _initialBoulderData:
+        .db 122, 55
+        .db TILE_BOULDER
+        .dw BoulderCanPassThrough
+        .dw BoulderActivateTile
+
+
+;Shuts down the game, copying needed data to persistent memory
+CloseGame:
+    ;Save persistent data
+    ld ix,PERSISTENT_DATA
+    ld (ix + 0),1 ;Signals to future executions that program has been run before
+    ld a,(player + ENTITY_X)     \ ld (ix + 1), a
+    ld a,(player + ENTITY_Y)     \ ld (ix + 2), a
+    ld a,(player + ENTITY_COLOR) \ ld (ix + 3), a
+
+    ld a,(boulder + ENTITY_X) \ ld (ix + 4), a
+    ld a,(boulder + ENTITY_Y) \ ld (ix + 5), a
+
+    ld a,(player_gold) \ ld (ix + 6),a
+
+    ld hl,gold_collected_flags
+    ld de,PERSISTENT_DATA + 7
+    ld bc,9
+    ldir
+
+    call RestoreGraphics
+    ret
+
+GameLoop:
+    call WaitForKey
+    cp KEY_CLEAR
+    jp z,CloseGame
+
+    ld b,0 ;VelX
+    ld c,0 ;VelY
+    cp KEY_UP    \ jr nz,{+}
+    dec c
++:  cp KEY_DOWN  \ jr nz,{+}
+    inc c
++:  cp KEY_LEFT  \ jr nz,{+}
+    dec b
++:  cp KEY_RIGHT \ jr nz,{+}
+    inc b
++:
+    ld ix,player
+    push bc            ;Save velocity
+    call EraseEntity
+    call EntityGetRoom ;Get old room
+    ld l,a             ;HL = (Y,X)
+    ex (sp),hl         ;Save old room, Restore velocity
+    ld b,h
+    ld c,l
+    call EntityMove
+    call EntityGetRoom 
+    ld l,a             ;HL = new room (Y,X)
+    pop de
+    or a
+    sbc hl,de
+    jr z,{+}
+    call DrawRoom   ;If new room x/y != old room x/y, draw new room
+    ld ix,boulder
+    call DrawEntity
+    ld ix,player
+    +:
+    call DrawEntity
+
+    ld hl,(nextAnimation)
+    ld a,h
+    or l
+    call nz,DisplayAnimation
+    ld hl,0
+    ld (nextAnimation),hl
+
+
+    jr GameLoop
+    ret
+
+;HL - pointer to animation
+;Destroys IX
+DisplayAnimation:
+    ld e,(hl) \ inc hl
+    ld d,(hl) \ inc hl
+    ld ix,player
+    _dispAnimLp:
+        push de
+        ex de,hl
+        call Wait
+        ex de,hl
+        pop de
+        ld a,(hl) \ inc hl
+        cp FFh ;End signal
+        ret z
+        ld (player + ENTITY_X),a
+        ld a,(hl) \ inc hl
+        ld (player + ENTITY_Y),a
+        push hl
+        push de
+        call DrawRoom
+        call DrawEntity
+        pop de
+        pop hl
+        jr _dispAnimLp
+
+
+;Gets a tile address at (a,h)
+;IN : A = X, H = Y
+;OUT: HL = Tile address
+GetTileAddr:
+    ;HL = H * 128 + A
+    ld  l,a
+    xor a
+    srl h
+    rra
+    add a,l
+    ld  l,a
+    jr nc,{+}
+    inc h
+    +:
+    ld de,WORLD_DATA
+    add hl,de
+    ret
+
+KEY_DOWN  = %00000001
+KEY_LEFT  = %00000010
+KEY_RIGHT = %00000100
+KEY_UP    = %00001000
+KEY_CLEAR = %01000000
+
+;Waits for a key to be pressed
+WaitForKey:
+    call GetKey
+    ld d,a
+    ld a,(prevKey)
+    or a
+    jr z,WaitForKey
+    ld a,d
+    or a
+    ret nz
+    ld hl,100
+    call Wait
+    jr WaitForKey
+
+;Get key with key repeat
+;A = key code
+;Destroys HL,D
+.var byte, keyCounter
+.var byte, prevKey
+GetKey:
+    in a,(01h)
+    cpl
+    and %01001111
+    ld hl,prevKey
+    cp (hl)
+    jr z,_chkKeyRepeat
+        ld (hl),a
+        ld hl,keyCounter
+        ld (hl),13
+        ret
+_chkKeyRepeat:
+    ld d,a ;Save key
+    ld hl,keyCounter
+    ld a,(hl)
+    or a     \ jr z,{+}
+    dec (hl) \ jr z,{+}
+        xor a ;Key repeat not done, ret 0
+        ret
+    +:
+    ld (hl),6 ;Smaller repeat delay
+    ld a,d ;Restore key
+    ret
+    
+
+.endmodule

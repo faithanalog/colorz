@@ -1,0 +1,222 @@
+;D: X: 0-3
+;E: Y: 0-2
+;A: Color
+DrawRect:
+    ;ld  b,a
+    ld  c,a
+    ld  h,_rectCoordsX >> 8
+    ld  a,_rectCoordsX
+    add a,d
+    ld  l,a
+    ld  d,(hl)
+    ld  a,_rectCoordsY
+    add a,e
+    ld  l,a
+    ld  e,(hl)
+    jp FillRect
+    .align 8
+    _rectCoordsX: ;Divided by 2
+        .db 0, 40, 80, 120
+    _rectCoordsY:
+        .db 0, 80, 160
+
+;Half-res mode
+;Full-height window
+InitGraphics:
+    ld hl,_initTable
+    jp SetLcdTable
+
+;Full-res mode
+RestoreGraphics:
+    ld hl,_restoreTable
+    jp SetLcdTable
+
+;Sets LCD Register values from a table of registers
+;Input:  HL - pointer
+;Output: HL = Pointer to data directly after end of table
+;Destroys: A, BC
+SetLcdTable:
+    ld c,11h
+_setLcdTableLp:
+    ld a,(hl) \ inc hl
+    cp 255
+    ret z
+    out (10h),a
+    out (10h),a
+    ld b,(hl) \ inc hl ;LSB
+    ld a,(hl) \ inc hl ;MSB
+    out (11h),a
+    out (c),b
+    jr _setLcdTableLp
+
+;LCD data tables
+;Format is register, LSB, MSB
+;Register FFh signals end of a table
+;
+;Enable half-res mode and set y-inc mode for cursor
+_initTable:
+    .db 01h, %00000000, %00000100 ;Enable interlace
+    .db 07h, %00110011, %00110000 ;Enable partial images
+    .db 80h \ .dw 0   ;Img 1 display position
+    .db 83h \ .dw 160 ;Img 2 display position
+    .db 81h \ .dw 0   ;Img 1 start line
+    .db 84h \ .dw 0   ;Img 2 start line
+    .db 82h \ .dw 159 ;Img 1 end line
+    .db 85h \ .dw 159 ;Img 2 end line
+    .db 50h \ .dw 0   ;Win top
+    .db 51h \ .dw 239 ;Win bottom
+    .db FFh
+
+_restoreTable:
+    .db 01h, %00000000, %00000000 ;Disable interlace
+    .db 07h, %00110011, %00000001 ;Disable partial images
+    .db FFh
+
+;D - X
+;E - Y
+;C - Color
+FillRect:
+    ld a,c
+    cp TILE_INVISIBLE
+    ret z             ;Don't display invisible stuff
+    ld a,lrWinLeft
+    out (10h),a
+    out (10h),a
+    xor a   \ out (11h),a
+    ld  a,d \ out (11h),a
+
+    ld a,lrCol
+    out (10h),a
+    out (10h),a
+    xor a   \ out (11h),a
+    ld  a,d \ out (11h),a
+
+    ld a,lrWinRight
+    out (10h),a
+    out (10h),a
+    xor a   \ out (11h),a
+    ld  a,d \ add a,39 \ out (11h),a
+
+    ld a,lrRow
+    out (10h),a
+    out (10h),a
+
+    xor a   \ out (11h),a
+    ld  a,e \ out (11h),a
+
+    ld a,lrGram
+    out (10h),a
+    out (10h),a
+
+    ld a,c
+    ld b,128 ;40 * 80 / 25
+_dispRectLp:
+    .repeat 25
+        out (11h),a
+        out (11h),a
+    .loop
+    djnz _dispRectLp
+    ret
+
+;Draws the room the player is in
+DrawRoom:
+    ld ix,player
+    call EntityGetRoom
+    call GetTileAddr ;HL = top left tile address
+    ld  c,3           ;Loop 3x
+    _dispYLp:
+        ld b,4       ;Loop 4x
+        _dispXLp:
+            push hl
+            push bc
+            ld   a,3 \ sub c \ ld e,a ;Y coordinate
+            ld   a,4 \ sub b \ ld d,a ;X coordinate
+            ld   a,(hl)
+            call DrawRect
+            pop  bc
+            pop  hl
+            inc  hl   ;Ptr++
+            djnz _dispXLp
+        ld  de,128 - 4
+        add hl,de
+        dec c         ;Y loop--
+        jr nz,_dispYLp
+    ret
+
+
+;IX - entity
+;out: D - x, E - y
+GetEntityCoordsOnScreen:
+    push ix
+    ld ix,player
+    call EntityGetRoom
+    pop ix
+    ld d,a
+    ld e,h
+    ld h,(ix + ENTITY_X)
+    ld l,(ix + ENTITY_Y)
+    or a
+    sbc hl,de
+    ex de,hl
+    ret
+
+;Checks if D,E is off screen
+;C - off screen
+;NC - on screen
+_isOffScreen:
+    ld a,3
+    cp d
+    ret c
+    ld a,2
+    cp e
+    ret c
+    or a
+    ret
+
+;Draws the tile beneath the entity
+;IX - entity
+EraseEntity:
+    call GetEntityCoordsOnScreen
+    call _isOffScreen
+    ret c
+    push de
+    ld a,(ix + ENTITY_X)
+    ld h,(ix + ENTITY_Y)
+    call GetTileAddr
+    ld a,(hl)
+    pop de
+    jp DrawRect
+
+
+;Draws the entity
+;IX - entity
+DrawEntity:
+    call GetEntityCoordsOnScreen
+    call _isOffScreen
+    ret c
+    ld a,(ix + ENTITY_COLOR)
+    jp DrawRect
+
+
+;Inverts the screen, then uninverts after 150ms
+FlashScreen:
+    call _invertScreen
+    ld hl,4500 * 150 / 1000
+    call Wait
+    jp _invertScreen
+
+
+_invertScreen:
+    ld a,61h
+    out (10h),a
+    out (10h),a
+    in a,(11h) ;Dummy read
+    in a,(11h) ;Dummy read
+    in a,(11h) ;MSB, don't care
+    in a,(11h) ;LSB, do care
+
+    xor %00000001
+    push af
+    xor a  \ out (11h),a
+    pop af \ out (11h),a
+    ret

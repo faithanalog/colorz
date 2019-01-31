@@ -1,0 +1,9 @@
+{
+    "name": "level_gen",
+    "description": "Generate level for ColorZ from a PNG",
+    "author": "unknownloner <unknownloner@ukl.me>",
+    "dependencies": {
+        "lwip": "0.0.x",
+        "lodash": "3.9.x"
+    }
+}

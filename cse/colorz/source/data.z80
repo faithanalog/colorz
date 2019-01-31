@@ -1,0 +1,134 @@
+WORLD_DATA:
+.incbin "assets/world.bin"
+
+TILE_LIST_PLAYER_RED:
+    .db 3
+    .db TILE_DARK_RED
+    .db TILE_DARK_MAGENTA
+    .db TILE_DARK_YELLOW
+
+TILE_LIST_PLAYER_GREEN:
+    .db 3
+    .db TILE_DARK_GREEN
+    .db TILE_DARK_CYAN
+    .db TILE_DARK_YELLOW
+
+TILE_LIST_PLAYER_BLUE:
+    .db 3
+    .db TILE_DARK_BLUE
+    .db TILE_DARK_CYAN
+    .db TILE_DARK_MAGENTA
+
+TILE_LIST_PLAYER_CYAN:
+    .db 1
+    .db TILE_DARK_CYAN
+
+TILE_LIST_PLAYER_MAGENTA:
+    .db 1
+    .db TILE_DARK_MAGENTA
+
+TILE_LIST_PLAYER_YELLOW:
+    .db 1
+    .db TILE_DARK_YELLOW
+
+TILE_LIST_PAINTS:
+    .db 6
+    .db TILE_DARK_RED
+    .db TILE_DARK_GREEN
+    .db TILE_DARK_BLUE
+    .db TILE_DARK_CYAN
+    .db TILE_DARK_MAGENTA
+    .db TILE_DARK_YELLOW
+
+TILE_LIST_FLOORS:
+    .db 6
+    .db TILE_EMPTY
+    .db TILE_FLOOR
+    .db TILE_FLOOR2
+    .db TILE_FLOOR3
+    .db TILE_FLOOR4
+    .db TILE_WATER_LOW
+
+TILE_LIST_IMPASSABLE:
+    .db 8
+    .db TILE_WALL
+    .db TILE_WALL2
+    .db TILE_WALL3
+    .db TILE_WALL4
+    .db TILE_WALL5
+    .db TILE_WATER
+    .db TILE_WATER2
+    .db TILE_WATER3
+
+
+;Format: SrcX, SrcY, DstX, DstY
+TELEPORT_LINKS:
+    .db 19,  6, 17,  8
+    .db 24,  7, 48,  7
+    .db 36, 22, 48,  7
+    .db 43,  6, 17,  8
+
+;Teleport Loop
+    .db 22, 33, 26, 44
+    .db 26, 33, 30, 44
+    .db 30, 33, 38, 44
+    .db 38, 33, 26, 44
+    .db 34, 33, 85, 49 ;Loop Exit to sewers
+
+;Spaceship
+    .db 97, 13, 53, 16 ;Sewers to spaceship
+    .db 49, 19, 58, 22 ;Challenge 1 - l - pass
+    .db 66, 19, 53, 16 ;Challenge 1 - r - fail
+    .db 49, 25, 53, 16 ;Challenge 2 - l - fail
+    .db 66, 25, 58, 28 ;Challenge 2 - r - pass
+    .db 49, 31, 58, 34 ;Challenge 3 - l - pass
+    .db 66, 31, 53, 16 ;Challenge 3 - r - fail
+    .db 49, 37, 58, 40 ;Challenge 4 - l - pass
+    .db 66, 37, 53, 16 ;Challenge 4 - r - fail
+
+;Format; X, Y, Floor color, List index
+GOLD_LIST:
+;    .db FFh, FFh, TILE_FLOOR,  FFh
+    .db 10, 19, TILE_FLOOR,  0
+    .db 51, 3,  TILE_FLOOR,  1
+    .db 4,  42, TILE_FLOOR,  2
+    .db 4,  43, TILE_FLOOR,  3
+    .db 9,  39, TILE_FLOOR2, 4
+    .db 85, 40, TILE_FLOOR3, 5
+    .db 86, 40, TILE_FLOOR3, 6
+    .db 93, 55, TILE_FLOOR3, 7
+    .db 77, 40, TILE_FLOOR4, 8
+
+;Animation frames
+;Animation format:
+;Delay between frames
+;Frame list
+;   Frame format:
+;   X, Y
+;   FFh = end of frames
+ANIM_WATER_DRAIN:
+    .dw 4500 * 300 / 1000
+    .db 58,  1
+    .db 58,  4
+    .db 58,  7
+    .db 110, 25
+    .db FFh
+
+ANIM_WIN:
+    .dw 4500 * 150 / 1000
+    .db 2,  49
+    .db 6,  49
+    .db 10, 49
+    .db 14, 49
+    .db 18, 49
+    .db 22, 49
+    .db 26, 49
+    .db 30, 49
+    .db 34, 49
+    .db 38, 49
+    .db 42, 49
+    .db FFh
+
+;Vars stored in main program code for writeback
+PERSISTENT_DATA = UserMem + 2
+

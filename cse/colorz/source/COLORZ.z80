@@ -1,0 +1,92 @@
+#define TI83P
+.binarymode TI8X
+.nolist
+.global
+#include "tasm/ti84pcse.inc"
+#include "tasm/dcse8.inc"
+.endglobal
+#include "source/data_labels.inc"
+.list
+.variablename COLORZ
+
+    .org UserMem
+BinaryStart:
+    .db $DE,$2A,"N",$BB,$B4,$BB,$B4,$BB,$B3,$BB,$C3,")D"   ;Disp "Needs D
+    .db $BB,$BF,$BB,$BF,$BB,$C2,$BB,$C3,")CSE",$2A,$3F     ;oors CSE"
+    .db $EF,$11                                            ;OpenLib(
+    .db "D",$BB,$BF,$BB,$BF,$BB,$C2,$BB,$C3,"CSE",$11,$3F  ;(tokenized "DoorsCSE")
+    .db $EF,$12,$3F                                        ;ExecLib
+    .db $D5,$3F                                            ;Return
+    .db tExtTok,tAsm84CPrgm,$3F                            ;Asm84CPrgm
+HeaderStart:
+    .dw ASMStart-HeaderStart        ;offset to code
+    ; Header sections start here
+
+    .dw 10
+    .db ASMHEADER_FIELD_TYPE_LIB    ;== 3
+    .db "DoorsCSE",8,1              ;Lib name, min major version, min minor version
+
+    .dw endDCSIcon - startDCSIcon
+    .db ASMHEADER_FIELD_TYPE_ICON
+startDCSIcon:
+    .db 1 ;1 bit color
+    .dw B5FFh ;BG, Fluttershy Yellow
+    .dw 16E4h ;BG, Fluttershy Mane Outline
+    .db 32, 32 ;Size
+    .incbmp "assets/game_logo.png"
+endDCSIcon:
+
+    .dw endDCSDesc - startDCSDesc
+    .db ASMHEADER_FIELD_TYPE_DESC
+startDCSDesc:
+    .db "4x3 Pixel Game",0
+endDCSDesc:
+
+    .dw endDCSAuthor - startDCSAuthor
+    .db ASMHEADER_FIELD_TYPE_AUTH
+startDCSAuthor:
+    .db "Unknownloner",0
+endDCSAuthor:
+
+    ;.dw 0
+    ;.db ASMHEADER_FIELD_TYPE_HALFRES
+
+    .dw 0     ;End of header field: 0 bytes of data
+    .db $ff   ;End of header field: type 255
+ASMStart:
+.relocate UserMem
+    jr {+}
+    ;Memory maintained between runs
+    .fill 16,0
++:
+    di
+    ;Map page 5 @ C000h
+    ld a,05h
+    out (05h),a
+
+    ;15mhz processor
+    ld a,1
+    out (20h),a
+    
+    ld hl,COMPRESSED_DATA
+    ld de,C000h
+    call DecompressLZ4Data
+
+    call Main
+
+    ;Map page 0 @ C000h
+    ld a,00h
+    out (05h),a
+    ei
+
+    ;6mhz processor
+    xor a
+    out (20h),a
+    ret
+
+.include "source/lz4.z80"
+
+COMPRESSED_DATA:
+.incbin "source/data.bin.lz4"
+
+.endrelocate

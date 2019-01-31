@@ -1,0 +1,76 @@
+.module Tiles
+TILE_EMPTY        = 0
+TILE_FLOOR        = 42
+TILE_FLOOR2       = 40
+TILE_FLOOR3       = 33
+TILE_FLOOR4       = 81
+TILE_RED          = 224
+TILE_BLUE         = 24
+TILE_GREEN        = 7
+TILE_DARK_RED     = 160
+TILE_DARK_GREEN   = 4
+TILE_DARK_BLUE    = 16
+TILE_CYAN         = 31
+TILE_MAGENTA      = 248
+TILE_YELLOW       = 231
+TILE_DARK_CYAN    = 21
+TILE_DARK_MAGENTA = 144
+TILE_DARK_YELLOW  = 197
+TILE_WALL         = 255
+TILE_WALL2        = 122
+TILE_WALL3        = 120
+TILE_WALL4        = 176
+TILE_WALL5        = 113
+TILE_WATER        = 18
+TILE_WATER2       = 20
+TILE_WATER3       = 60
+TILE_WATER4       = 126
+TILE_WATER_LOW    = 9
+TILE_BRIDGE_RAMP  = 173
+TILE_BRIDGE_RAMP2 = 140
+TILE_BRIDGE       = 181
+TILE_TELEPORT_SRC = 227
+TILE_TELEPORT_DST = 162
+TILE_GOLD         = 229
+TILE_BOULDER      = 107
+TILE_WIN          = 151
+TILE_INVISIBLE    = 123
+
+;Checks if a tile is not in the list of tiles
+;C  - Tile
+;HL - Pointer to tile list
+;Destroys HL
+;Z  = Tile is not in list.
+;NZ = Tile is in list
+TileNotInList:
+    call TileInList
+    push af
+    ex (sp),hl
+    ld a,l
+    xor %01000000  ;Invert zero flag
+    ld l,a
+    ex (sp),hl
+    pop af
+    ret
+
+;Checks if a tile is in the list of tiles
+;C  - Tile
+;HL - Pointer to tile list
+;Destroys HL
+;Z  = Tile is in list.
+;NZ = Tile not in list
+TileInList:
+    push bc
+    push de
+    ld d,a      ;Save A
+    ld a,c
+    ld b,0
+    ld c,(hl)   ;Get length
+    inc hl      ;Move to first element
+    cpir
+    ld a,d      ;Restore A
+    pop de
+    pop bc
+    ret
+
+.endmodule
